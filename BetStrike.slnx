@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="BetStrike.Apostas.Api/BetStrike.Apostas.Api.csproj" />
+  <Project Path="BetStrike.GeradorDados/BetStrike.GeradorDados.csproj" />
+  <Project Path="BetStrike.Resultados.Api/BetStrike.Resultados.Api.csproj" />
+</Solution>

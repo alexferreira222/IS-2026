@@ -1,0 +1,6 @@
+@BetStrike.Resultados.Api_HostAddress = http://localhost:5128
+
+GET {{BetStrike.Resultados.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
