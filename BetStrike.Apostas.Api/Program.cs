@@ -66,7 +66,66 @@ app.MapPost("/jogos", async (JogoDto jogo, IConfiguration config) => {
         }
     }
 });
+// 3. NOVO: Endpoint para atualizar o estado e marcador de um jogo
+app.MapPut("/jogos/{codigoJogo}", async (string codigoJogo, AtualizarJogoDto atualizacao, IConfiguration config) => {
+    string connectionString = config.GetConnectionString("ApostasDB") ?? "";
 
+    using (SqlConnection conn = new SqlConnection(connectionString))
+    {
+        using (SqlCommand cmd = new SqlCommand("sp_AtualizarEstadoJogo", conn))
+        {
+            cmd.CommandType = CommandType.StoredProcedure;
+
+            cmd.Parameters.AddWithValue("@CodigoJogo", codigoJogo);
+            cmd.Parameters.AddWithValue("@Estado", atualizacao.Estado);
+            cmd.Parameters.AddWithValue("@GolosCasa", atualizacao.GolosCasa);
+            cmd.Parameters.AddWithValue("@GolosFora", atualizacao.GolosFora);
+
+            try
+            {
+                await conn.OpenAsync();
+                await cmd.ExecuteNonQueryAsync();
+                return Results.Ok(new { Mensagem = "Jogo atualizado com sucesso!" });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Erro ao atualizar jogo: {ex.Message}");
+            }
+        }
+    }
+});
+// 4. NOVO: Endpoint para inserir o resultado final de um jogo
+app.MapPost("/resultados", async (ResultadoDto resultado, IConfiguration config) => {
+    string connectionString = config.GetConnectionString("ApostasDB") ?? "";
+
+    using (SqlConnection conn = new SqlConnection(connectionString))
+    {
+        using (SqlCommand cmd = new SqlCommand("sp_InserirResultado", conn))
+        {
+            cmd.CommandType = CommandType.StoredProcedure;
+
+            cmd.Parameters.AddWithValue("@CodigoJogo", resultado.CodigoJogo);
+            cmd.Parameters.AddWithValue("@GolosCasa", resultado.GolosCasa);
+            cmd.Parameters.AddWithValue("@GolosFora", resultado.GolosFora);
+
+            try
+            {
+                await conn.OpenAsync();
+                await cmd.ExecuteNonQueryAsync();
+                return Results.Ok(new { Mensagem = "Resultado final guardado na tabela Resultados!" });
+            }
+            catch (SqlException ex)
+            {
+                // Captura os nossos erros da Stored Procedure (ex: "jogo já tem resultado")
+                return Results.BadRequest(new { Erro = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"Erro de sistema: {ex.Message}");
+            }
+        }
+    }
+});
 app.Run();
 
 // Modelo para receber os dados
@@ -81,4 +140,16 @@ public class JogoDto
     public string Competicao { get; set; } = string.Empty;
 
     public int Estado { get; set; }
+}
+public class AtualizarJogoDto
+{
+    public int Estado { get; set; }
+    public int GolosCasa { get; set; }
+    public int GolosFora { get; set; }
+}
+public class ResultadoDto
+{
+    public string CodigoJogo { get; set; } = string.Empty;
+    public int GolosCasa { get; set; }
+    public int GolosFora { get; set; }
 }
