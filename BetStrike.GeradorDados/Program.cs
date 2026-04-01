@@ -1,51 +1,79 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
 
 namespace BetStrike.GeradorDados
 {
     class Program
     {
-        // Cliente HTTP para invocar a API REST da Plataforma de Resultados
         private static readonly HttpClient httpClient = new HttpClient();
+        // Garante que este porto (7083) é o mesmo que aparece na tua janela da API
+        private static string apiUrl = "https://localhost:7083/jogos";
 
         static async Task Main(string[] args)
         {
-            Console.WriteLine("A iniciar a Aplicação Geradora de Dados - BetStrike...");
+            Console.WriteLine("A iniciar o Gerador - BetStrike...");
 
-            // 1. Gerar os 9 jogos da jornada
-            List<JogoSimulado> jogosDaJornada = GerarJogosJornada(2025, 1);
+            List<JogoSimulado> jogos = GerarJogosJornada(2025, 1);
 
-            // 2. Iniciar simulação em paralelo para os 9 jogos
-            List<Task> tarefasSimulacao = new List<Task>();
-            foreach (var jogo in jogosDaJornada)
+            // 1. Tentar inserir os 9 jogos na Base de Dados via API
+            foreach (var jogo in jogos)
             {
-                // Regista o jogo via API (Agendado)
-                // await InserirJogoNaPlataforma(jogo);
-
-                tarefasSimulacao.Add(SimularJogo(jogo));
+                await InserirJogoNaPlataforma(jogo);
             }
 
-            // Aguarda que todos os 9 jogos terminem
-            await Task.WhenAll(tarefasSimulacao);
+            Console.WriteLine("\n--- A INICIAR SIMULAÇÃO DOS JOGOS ---\n");
 
-            Console.WriteLine("Jornada finalizada!");
+            // 2. Simular os 9 jogos ao mesmo tempo
+            List<Task> tarefas = new List<Task>();
+            foreach (var jogo in jogos)
+            {
+                tarefas.Add(SimularJogo(jogo));
+            }
+            await Task.WhenAll(tarefas);
+
+            Console.WriteLine("\nJornada finalizada! Prime ENTER para sair.");
+            Console.ReadLine(); // Impede a consola de fechar sozinha!
+        }
+
+        static async Task InserirJogoNaPlataforma(JogoSimulado jogo)
+        {
+            try
+            {
+                var response = await httpClient.PostAsJsonAsync(apiUrl, jogo);
+                if (response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[API] Jogo {jogo.CodigoJogo} registado com sucesso na Base de Dados.");
+                }
+                else
+                {
+                    // Agora lê a mensagem de erro que vem da API/SQL Server
+                    var erroMsg = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[API] Erro ao registar {jogo.CodigoJogo}: {erroMsg}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERRO DE LIGAÇÃO] Falha na comunicação com a API: {ex.Message}");
+            }
         }
 
         static List<JogoSimulado> GerarJogosJornada(int ano, int jornada)
         {
             var jogos = new List<JogoSimulado>();
-            // Exemplo de geração de 1 jogo. Terás de implementar a lógica de emparelhamento aleatório das 18 equipas.
             for (int i = 1; i <= 9; i++)
             {
                 jogos.Add(new JogoSimulado
                 {
-                    // Formato: FUT-AAAA-JJNN
                     CodigoJogo = $"FUT-{ano}-{jornada:D2}{i:D2}",
                     EquipaCasa = $"Equipa Casa {i}",
                     EquipaFora = $"Equipa Fora {i}",
-                    Estado = 1 // Agendado
+                    DataJogo = DateTime.Now.Date,
+                    HoraInicio = DateTime.Now.TimeOfDay,
+                    Competicao = "Primeira Liga",
+                    Estado = 1 // Estado inicial: Agendado
                 });
             }
             return jogos;
@@ -54,41 +82,37 @@ namespace BetStrike.GeradorDados
         static async Task SimularJogo(JogoSimulado jogo)
         {
             Random rnd = new Random(Guid.NewGuid().GetHashCode());
+            jogo.Estado = 2; // Em Curso
 
-            // Transita para "Em Curso"
-            jogo.Estado = 2;
-            // await AtualizarJogoNaPlataforma(jogo);
             Console.WriteLine($"[{jogo.CodigoJogo}] Apito inicial: {jogo.EquipaCasa} vs {jogo.EquipaFora}");
 
-            // Simula os 90 minutos (atualizando a cada 10 segundos)
+            // Simula os 90 minutos (atualizando a cada 10 segundos reais)
             for (int minuto = 0; minuto <= 90; minuto += 10)
             {
                 await Task.Delay(10000); // Espera 10 segundos reais
 
-                // Lógica simples para golos (Probabilidade média de 2 a 3 golos por jogo)
+                // Probabilidade de golo
                 if (rnd.Next(1, 100) <= 15) jogo.GolosCasa++;
                 if (rnd.Next(1, 100) <= 15) jogo.GolosFora++;
 
                 Console.WriteLine($"[{jogo.CodigoJogo}] Minuto {minuto}': {jogo.EquipaCasa} {jogo.GolosCasa} - {jogo.GolosFora} {jogo.EquipaFora}");
-
-                // await AtualizarJogoNaPlataforma(jogo);
             }
 
-            // Transita para "Finalizado"
-            jogo.Estado = 3;
-            // await AtualizarJogoNaPlataforma(jogo);
+            jogo.Estado = 3; // Finalizado
             Console.WriteLine($"[{jogo.CodigoJogo}] FINAL DO JOGO!");
         }
     }
 
     public class JogoSimulado
     {
-        public string CodigoJogo { get; set; }
-        public string EquipaCasa { get; set; }
-        public string EquipaFora { get; set; }
+        public string CodigoJogo { get; set; } = string.Empty;
+        public string EquipaCasa { get; set; } = string.Empty;
+        public string EquipaFora { get; set; } = string.Empty;
+        public DateTime DataJogo { get; set; }
+        public TimeSpan HoraInicio { get; set; }
+        public string Competicao { get; set; } = string.Empty;
+        public int Estado { get; set; }
         public int GolosCasa { get; set; } = 0;
         public int GolosFora { get; set; } = 0;
-        public int Estado { get; set; }
     }
 }
-
