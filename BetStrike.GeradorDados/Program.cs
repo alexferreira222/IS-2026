@@ -10,13 +10,13 @@ namespace BetStrike.GeradorDados
     {
         private static readonly HttpClient httpClient = new HttpClient();
         // Garante que este porto (7083) é o mesmo que aparece na tua janela da API
-        private static string apiUrl = "https://localhost:7083/jogos";
+        private static string apiUrl = "https://localhost:7083/api/jogos";
 
         static async Task Main(string[] args)
         {
             Console.WriteLine("A iniciar o Gerador - BetStrike...");
 
-            List<JogoSimulado> jogos = GerarJogosJornada(2025, 1);
+            List<JogoSimulado> jogos = GerarJogosJornada(2025, 2);
 
             // 1. Tentar inserir os 9 jogos na Base de Dados via API
             foreach (var jogo in jogos)
@@ -45,13 +45,13 @@ namespace BetStrike.GeradorDados
                 var response = await httpClient.PostAsJsonAsync(apiUrl, jogo);
                 if (response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[API] Jogo {jogo.CodigoJogo} registado com sucesso na Base de Dados.");
+                    Console.WriteLine($"[API] Jogo {jogo.Codigo} registado com sucesso na Base de Dados.");
                 }
                 else
                 {
                     // Agora lê a mensagem de erro que vem da API/SQL Server
                     var erroMsg = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[API] Erro ao registar {jogo.CodigoJogo}: {erroMsg}");
+                    Console.WriteLine($"[API] Erro ao registar {jogo.Codigo: erroMsg}");
                 }
             }
             catch (Exception ex)
@@ -71,13 +71,13 @@ namespace BetStrike.GeradorDados
                     GolosFora = jogo.GolosFora
                 };
 
-                var response = await httpClient.PutAsJsonAsync($"{apiUrl}/{jogo.CodigoJogo}", atualizacao);
+                var response = await httpClient.PutAsJsonAsync($"{apiUrl}/{jogo.Codigo}", atualizacao);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     // Agora ele avisa se a API recusar a atualização!
                     var erroMsg = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[API ERRO] Falha ao atualizar {jogo.CodigoJogo}: {erroMsg}");
+                    Console.WriteLine($"[API ERRO] Falha ao atualizar {jogo.Codigo}: {erroMsg}");
                 }
             }
             catch (Exception ex)
@@ -93,13 +93,15 @@ namespace BetStrike.GeradorDados
             {
                 jogos.Add(new JogoSimulado
                 {
-                    CodigoJogo = $"FUT-{ano}-{jornada:D2}{i:D2}",
+                    Codigo = $"FUT-{ano}-{jornada:D2}{i:D2}",
                     EquipaCasa = $"Equipa Casa {i}",
                     EquipaFora = $"Equipa Fora {i}",
-                    DataJogo = DateTime.Now.Date,
-                    HoraInicio = DateTime.Now.TimeOfDay,
-                    Competicao = "Primeira Liga",
-                    Estado = 1 // Estado inicial: Agendado
+
+                    // SUBSTITUIR AQUI TAMBÉM:
+                    DataHoraInicio = DateTime.Now,
+
+                    TipoCompeticao = "Primeira Liga",
+                    Estado = 1
                 });
             }
             return jogos;
@@ -113,7 +115,7 @@ namespace BetStrike.GeradorDados
             jogo.Estado = 2;
             await AtualizarJogoNaPlataforma(jogo);
 
-            Console.WriteLine($"[{jogo.CodigoJogo}] Apito inicial: {jogo.EquipaCasa} vs {jogo.EquipaFora}");
+            Console.WriteLine($"[{jogo.Codigo}] Apito inicial: {jogo.EquipaCasa} vs {jogo.EquipaFora}");
 
             for (int minuto = 0; minuto <= 90; minuto += 10)
             {
@@ -122,7 +124,7 @@ namespace BetStrike.GeradorDados
                 if (rnd.Next(1, 100) <= 15) jogo.GolosCasa++;
                 if (rnd.Next(1, 100) <= 15) jogo.GolosFora++;
 
-                Console.WriteLine($"[{jogo.CodigoJogo}] Minuto {minuto}': {jogo.EquipaCasa} {jogo.GolosCasa} - {jogo.GolosFora} {jogo.EquipaFora}");
+                Console.WriteLine($"[{jogo.Codigo}] Minuto {minuto}': {jogo.EquipaCasa} {jogo.GolosCasa} - {jogo.GolosFora} {jogo.EquipaFora}");
 
                 // 2. ATUALIZA A API com os novos golos (sem barras //)
                 await AtualizarJogoNaPlataforma(jogo);
@@ -133,7 +135,7 @@ namespace BetStrike.GeradorDados
             jogo.Estado = 3;
             await AtualizarJogoNaPlataforma(jogo);
 
-            Console.WriteLine($"[{jogo.CodigoJogo}] FINAL DO JOGO!");
+            Console.WriteLine($"[{jogo.Codigo}] FINAL DO JOGO!");
 
             // 4. INSERE O RESULTADO FINAL (ADICIONAR ESTA LINHA)
             await InserirResultadoFinal(jogo);
@@ -146,22 +148,22 @@ namespace BetStrike.GeradorDados
             {
                 var resultadoFinal = new
                 {
-                    CodigoJogo = jogo.CodigoJogo,
+                    CodigoJogo = jogo.Codigo,
                     GolosCasa = jogo.GolosCasa,
                     GolosFora = jogo.GolosFora
                 };
 
                 // Faz o POST para o nosso novo endpoint
-                var response = await httpClient.PostAsJsonAsync("https://localhost:7083/resultados", resultadoFinal);
+                var response = await httpClient.PostAsJsonAsync("https://localhost:7083/api/resultados", resultadoFinal);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[{jogo.CodigoJogo}] --- RESULTADO FINAL GRAVADO NA BD ---");
+                    Console.WriteLine($"[{jogo.Codigo}] --- RESULTADO FINAL GRAVADO NA BD ---");
                 }
                 else
                 {
                     var erroMsg = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[{jogo.CodigoJogo}] ERRO NO RESULTADO: {erroMsg}");
+                    Console.WriteLine($"[{jogo.Codigo}] ERRO NO RESULTADO: {erroMsg}");
                 }
             }
             catch (Exception ex)
@@ -171,12 +173,11 @@ namespace BetStrike.GeradorDados
         }
         public class JogoSimulado
         {
-            public string CodigoJogo { get; set; } = string.Empty;
+            public string Codigo { get; set; } = string.Empty; // <-- Mudar de CodigoJogo para Codigo
             public string EquipaCasa { get; set; } = string.Empty;
             public string EquipaFora { get; set; } = string.Empty;
-            public DateTime DataJogo { get; set; }
-            public TimeSpan HoraInicio { get; set; }
-            public string Competicao { get; set; } = string.Empty;
+            public DateTime DataHoraInicio { get; set; }
+            public string TipoCompeticao { get; set; } = string.Empty; // <-- Mudar de Competicao para TipoCompeticao
             public int Estado { get; set; }
             public int GolosCasa { get; set; } = 0;
             public int GolosFora { get; set; } = 0;

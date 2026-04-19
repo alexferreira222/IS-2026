@@ -15,8 +15,7 @@ namespace BetStrike.Apostas.Api.Controllers
 
         public JogosController(IConfiguration configuration, ILogger<JogosController> logger)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection");
-            _logger = logger;
+            _connectionString = configuration.GetConnectionString("Apostas") ?? ""; _logger = logger;
         }
 
         /// <summary>
