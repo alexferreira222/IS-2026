@@ -1,7 +1,14 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// Bug 4 — CORS
+builder.Services.AddCors(options => {
+    options.AddPolicy("PermitirTudo", b =>
+        b.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
+
+// Bug 3 — registar os controllers
+builder.Services.AddControllers();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -14,9 +21,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Bug 4 — ativar CORS (tem de vir antes do MapControllers)
+app.UseCors("PermitirTudo");
+
 app.UseHttpsRedirection();
 
-// A tua API de Resultados está agora limpa e pronta para receber os endpoints reais
+// Bug 3 — mapear as rotas dos controllers
+app.MapControllers();
+
 app.MapGet("/", () => "API de Resultados a funcionar perfeitamente!");
 
 app.Run();

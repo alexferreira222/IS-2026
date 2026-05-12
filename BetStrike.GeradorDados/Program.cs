@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -9,54 +10,75 @@ namespace BetStrike.GeradorDados
     class Program
     {
         private static readonly HttpClient httpClient = new HttpClient();
-        // Garante que este porto (7083) é o mesmo que aparece na tua janela da API
         private static string apiUrl = "https://localhost:7083/api/jogos";
 
         static async Task Main(string[] args)
         {
             Console.WriteLine("A iniciar o Gerador - BetStrike...");
 
-            List<JogoSimulado> jogos = GerarJogosJornada(2025, 2);
+            List<JogoSimulado> jogosGerados = GerarJogosJornada();
+            List<JogoSimulado> jogosParaSimular = new List<JogoSimulado>();
 
-            // 1. Tentar inserir os 9 jogos na Base de Dados via API
-            foreach (var jogo in jogos)
+            Console.WriteLine("\n--- A INSERIR JOGOS NA BD ---");
+
+            foreach (var jogo in jogosGerados)
             {
-                await InserirJogoNaPlataforma(jogo);
+                bool inseridoComSucesso = await InserirJogoNaPlataforma(jogo);
+                if (inseridoComSucesso)
+                {
+                    jogosParaSimular.Add(jogo);
+                }
             }
 
-            Console.WriteLine("\n--- A INICIAR SIMULAÇÃO DOS JOGOS ---\n");
+            if (jogosParaSimular.Count == 0)
+            {
+                Console.WriteLine("\nNenhum jogo novo foi inserido. A simulação foi cancelada!");
+                Console.ReadLine();
+                return;
+            }
 
-            // 2. Simular os 9 jogos ao mesmo tempo
+            Console.WriteLine("\n====================================================");
+            Console.WriteLine("Fase 1 Concluída: Calendário Publicado com Sucesso!");
+            Console.WriteLine("Os jogos estão agora no estado 'Agendado' (1).");
+            Console.WriteLine("Podes ir ao site e realizar as tuas apostas agora.");
+            Console.WriteLine("====================================================");
+            Console.WriteLine("\nPrime [ENTER] quando quiseres iniciar a simulação (Fase 2)...");
+            Console.ReadLine();
+
+            Console.WriteLine("\n--- A INICIAR SIMULAÇÃO DOS JOGOS VÁLIDOS ---\n");
+
             List<Task> tarefas = new List<Task>();
-            foreach (var jogo in jogos)
+            foreach (var jogo in jogosParaSimular)
             {
                 tarefas.Add(SimularJogo(jogo));
             }
             await Task.WhenAll(tarefas);
 
             Console.WriteLine("\nJornada finalizada! Prime ENTER para sair.");
-            Console.ReadLine(); // Impede a consola de fechar sozinha!
+            Console.ReadLine();
         }
 
-        static async Task InserirJogoNaPlataforma(JogoSimulado jogo)
+        static async Task<bool> InserirJogoNaPlataforma(JogoSimulado jogo)
         {
             try
             {
                 var response = await httpClient.PostAsJsonAsync(apiUrl, jogo);
                 if (response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[API] Jogo {jogo.Codigo} registado com sucesso na Base de Dados.");
+                    Console.WriteLine($"[API] Jogo {jogo.Codigo} registado com sucesso.");
+                    return true;
                 }
                 else
                 {
-                    // Agora lê a mensagem de erro que vem da API/SQL Server
                     var erroMsg = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[API] Erro ao registar {jogo.Codigo: erroMsg}");
+                    Console.WriteLine($"[API] Rejeitado {jogo.Codigo}: {erroMsg}");
+                    return false;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERRO DE LIGAÇÃO] Falha na comunicação com a API: {ex.Message}");
+                Console.WriteLine($"[ERRO DE LIGAÇÃO] Falha na comunicação: {ex.Message}");
+                return false;
             }
         }
 
@@ -75,31 +97,38 @@ namespace BetStrike.GeradorDados
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    // Agora ele avisa se a API recusar a atualização!
                     var erroMsg = await response.Content.ReadAsStringAsync();
                     Console.WriteLine($"[API ERRO] Falha ao atualizar {jogo.Codigo}: {erroMsg}");
                 }
             }
             catch (Exception ex)
             {
-                // Agora ele avisa se não conseguir ligar à API!
                 Console.WriteLine($"[ERRO DE LIGAÇÃO] Falha ao atualizar: {ex.Message}");
             }
         }
-        static List<JogoSimulado> GerarJogosJornada(int ano, int jornada)
+
+        static List<JogoSimulado> GerarJogosJornada()
         {
             var jogos = new List<JogoSimulado>();
-            for (int i = 1; i <= 9; i++)
+            var rnd = new Random();
+            string ano = DateTime.Now.ToString("yyyy");
+
+            string[] equipas = { "Benfica", "Porto", "Sporting", "Braga", "Vitoria SC", "Moreirense",
+                                  "Arouca", "Gil Vicente", "Famalicao", "Boavista", "Estoril", "Rio Ave",
+                                  "Chaves", "Vizela", "Farense", "Estrela Amadora", "Portimonense", "Casa Pia" };
+
+            var equipasBaralhadas = equipas.OrderBy(x => rnd.Next()).ToList();
+
+            for (int i = 0; i < 9; i++)
             {
+                string idAleatorio = rnd.Next(1000, 9999).ToString();
+
                 jogos.Add(new JogoSimulado
                 {
-                    Codigo = $"FUT-{ano}-{jornada:D2}{i:D2}",
-                    EquipaCasa = $"Equipa Casa {i}",
-                    EquipaFora = $"Equipa Fora {i}",
-
-                    // SUBSTITUIR AQUI TAMBÉM:
-                    DataHoraInicio = DateTime.Now,
-
+                    Codigo = $"FUT-{ano}-{idAleatorio}",
+                    EquipaCasa = equipasBaralhadas[i],
+                    EquipaFora = equipasBaralhadas[i + 9],
+                    DataHoraInicio = DateTime.Now.AddHours(2),
                     TipoCompeticao = "Primeira Liga",
                     Estado = 1
                 });
@@ -111,7 +140,6 @@ namespace BetStrike.GeradorDados
         {
             Random rnd = new Random(Guid.NewGuid().GetHashCode());
 
-            // 1. Muda o estado para Em Curso e ATUALIZA A API (sem barras //)
             jogo.Estado = 2;
             await AtualizarJogoNaPlataforma(jogo);
 
@@ -119,65 +147,29 @@ namespace BetStrike.GeradorDados
 
             for (int minuto = 0; minuto <= 90; minuto += 10)
             {
-                await Task.Delay(10000); // Espera 10 segundos reais
+                await Task.Delay(10000);
 
                 if (rnd.Next(1, 100) <= 15) jogo.GolosCasa++;
                 if (rnd.Next(1, 100) <= 15) jogo.GolosFora++;
 
                 Console.WriteLine($"[{jogo.Codigo}] Minuto {minuto}': {jogo.EquipaCasa} {jogo.GolosCasa} - {jogo.GolosFora} {jogo.EquipaFora}");
 
-                // 2. ATUALIZA A API com os novos golos (sem barras //)
                 await AtualizarJogoNaPlataforma(jogo);
             }
 
-
-            // 3. Muda o estado para Finalizado e ATUALIZA A API
             jogo.Estado = 3;
             await AtualizarJogoNaPlataforma(jogo);
 
             Console.WriteLine($"[{jogo.Codigo}] FINAL DO JOGO!");
-
-            // 4. INSERE O RESULTADO FINAL (ADICIONAR ESTA LINHA)
-            await InserirResultadoFinal(jogo);
         }
 
-
-        static async Task InserirResultadoFinal(JogoSimulado jogo)
-        {
-            try
-            {
-                var resultadoFinal = new
-                {
-                    CodigoJogo = jogo.Codigo,
-                    GolosCasa = jogo.GolosCasa,
-                    GolosFora = jogo.GolosFora
-                };
-
-                // Faz o POST para o nosso novo endpoint
-                var response = await httpClient.PostAsJsonAsync("https://localhost:7083/api/resultados", resultadoFinal);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine($"[{jogo.Codigo}] --- RESULTADO FINAL GRAVADO NA BD ---");
-                }
-                else
-                {
-                    var erroMsg = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[{jogo.Codigo}] ERRO NO RESULTADO: {erroMsg}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Erro de ligação ao enviar resultado: {ex.Message}");
-            }
-        }
         public class JogoSimulado
         {
-            public string Codigo { get; set; } = string.Empty; // <-- Mudar de CodigoJogo para Codigo
+            public string Codigo { get; set; } = string.Empty;
             public string EquipaCasa { get; set; } = string.Empty;
             public string EquipaFora { get; set; } = string.Empty;
             public DateTime DataHoraInicio { get; set; }
-            public string TipoCompeticao { get; set; } = string.Empty; // <-- Mudar de Competicao para TipoCompeticao
+            public string TipoCompeticao { get; set; } = string.Empty;
             public int Estado { get; set; }
             public int GolosCasa { get; set; } = 0;
             public int GolosFora { get; set; } = 0;

@@ -14,7 +14,7 @@ namespace BetStrike.Apostas.Api.Controllers
 
         public PagamentosController(IConfiguration configuration, ILogger<PagamentosController> logger)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection");
+            _connectionString = configuration.GetConnectionString("Pagamentos") ?? ""; _logger = logger;
             _logger = logger;
         }
 
@@ -27,7 +27,9 @@ namespace BetStrike.Apostas.Api.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            _logger.LogInformation($"Depósito de {dto.Montante}€ para utilizador {dto.IdUtilizador}");
+            _logger.LogInformation($"Depósito de {dto.Montante}€ para utilizador {dto.UtilizadorId
+                
+                }");
 
             using (SqlConnection con = new SqlConnection(_connectionString))
             {
@@ -35,14 +37,14 @@ namespace BetStrike.Apostas.Api.Controllers
                 {
                     cmd.CommandType = CommandType.StoredProcedure;
                     cmd.CommandTimeout = 30;
-                    cmd.Parameters.AddWithValue("@IdUtilizador", dto.IdUtilizador);
+                    cmd.Parameters.AddWithValue("@UtilizadorId", dto.UtilizadorId);
                     cmd.Parameters.AddWithValue("@Montante", dto.Montante);
 
                     try
                     {
                         con.Open();
                         cmd.ExecuteNonQuery();
-                        _logger.LogInformation($"Depósito realizado com sucesso para utilizador {dto.IdUtilizador}");
+                        _logger.LogInformation($"Depósito realizado com sucesso para utilizador {dto.UtilizadorId}");
 
                         return Ok(new
                         {
@@ -69,7 +71,7 @@ namespace BetStrike.Apostas.Api.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            _logger.LogInformation($"Levantamento de {dto.Montante}€ para utilizador {dto.IdUtilizador}");
+            _logger.LogInformation($"Levantamento de {dto.Montante}€ para utilizador {dto.UtilizadorId}");
 
             using (SqlConnection con = new SqlConnection(_connectionString))
             {
@@ -77,14 +79,14 @@ namespace BetStrike.Apostas.Api.Controllers
                 {
                     cmd.CommandType = CommandType.StoredProcedure;
                     cmd.CommandTimeout = 30;
-                    cmd.Parameters.AddWithValue("@IdUtilizador", dto.IdUtilizador);
+                    cmd.Parameters.AddWithValue("@UtilizadorId", dto.UtilizadorId);
                     cmd.Parameters.AddWithValue("@Montante", dto.Montante);
 
                     try
                     {
                         con.Open();
                         cmd.ExecuteNonQuery();
-                        _logger.LogInformation($"Levantamento realizado com sucesso para utilizador {dto.IdUtilizador}");
+                        _logger.LogInformation($"Levantamento realizado com sucesso para utilizador {dto.UtilizadorId}");
 
                         return Ok(new
                         {
@@ -109,46 +111,44 @@ namespace BetStrike.Apostas.Api.Controllers
         /// <summary>
         /// Obter saldo da conta do utilizador
         /// </summary>
-        [HttpGet("saldo/{idUtilizador}")]
-        public IActionResult ObterSaldo(int idUtilizador)
+        [HttpGet("saldo/{UtilizadorId}")]
+        public IActionResult ObterSaldo(int UtilizadorId)
         {
-            if (idUtilizador <= 0)
-                return BadRequest(new { erro = "O ID do utilizador deve ser válido." });
+            if (UtilizadorId <= 0) return BadRequest(new { erro = "O ID do utilizador deve ser válido." });
 
-            _logger.LogInformation($"Obtendo saldo do utilizador {idUtilizador}");
-
-            using (SqlConnection con = new SqlConnection(_connectionString))
+            try
             {
-                using (SqlCommand cmd = new SqlCommand("sp_Pagamentos_ObterSaldo", con))
+                using (SqlConnection con = new SqlConnection(_connectionString))
                 {
-                    cmd.CommandType = CommandType.StoredProcedure;
-                    cmd.CommandTimeout = 30;
-                    cmd.Parameters.AddWithValue("@IdUtilizador", idUtilizador);
-
-                    try
+                    using (SqlCommand cmd = new SqlCommand("sp_Pagamentos_ObterSaldo", con))
                     {
+                        cmd.CommandType = CommandType.StoredProcedure;
+                        cmd.Parameters.AddWithValue("@UtilizadorId", UtilizadorId);
+
                         con.Open();
                         using (SqlDataReader reader = cmd.ExecuteReader())
                         {
                             if (reader.Read())
                             {
+                                // Vamos ver o que é que a base de dados enviou na primeira coluna
+                                var valorVindoDaBD = reader[0];
+
                                 return Ok(new
                                 {
-                                    idUtilizador = Convert.ToInt32(reader["IdUtilizador"]),
-                                    saldo = Convert.ToDecimal(reader["Saldo"]),
+                                    UtilizadorId = UtilizadorId,
+                                    saldo = Convert.ToDecimal(valorVindoDaBD),
                                     dataConsulta = DateTime.UtcNow
                                 });
                             }
-
                             return NotFound(new { erro = "Utilizador não encontrado." });
                         }
-                    }
-                    catch (SqlException ex)
-                    {
-                        _logger.LogError($"Erro ao obter saldo: {ex.Message}");
-                        return StatusCode(500, new { erro = "Erro ao recuperar saldo." });
-                    }
+                        }
                 }
+            }
+            catch (Exception ex) // <--- APANHA TUDO AGORA!
+            {
+                // Agora o C# é OBRIGADO a dizer o que falhou!
+                return StatusCode(500, new { erro = $"A VERDADE DO SALDO: {ex.Message}" });
             }
         }
     }
